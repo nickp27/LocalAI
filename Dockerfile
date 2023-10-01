@@ -55,6 +55,19 @@ WORKDIR /build
 # OpenBLAS requirements
 RUN apt-get install -y libopenblas-dev
 
+# clBLAST iGPu requirements
+RUN apt install libclblast-dev -y && \
+              mkdir /tmp/neo && \
+              cd /tmp/neo && \
+              wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.14508.16/intel-igc-core_1.0.14508.16_amd64.deb && \
+              wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.14508.16/intel-igc-opencl_1.0.14508.16_amd64.deb && \
+              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-level-zero-gpu-dbgsym_1.3.26690.22_amd64.ddeb && \
+              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-level-zero-gpu_1.3.26690.22_amd64.deb && \
+              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-opencl-icd-dbgsym_23.26.26690.22_amd64.ddeb && \
+              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-opencl-icd_23.26.26690.22_amd64.deb && \
+              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/libigdgmm12_22.3.0_amd64.deb && \
+              dpkg -i *.deb
+
 # Stable Diffusion requirements
 RUN apt-get install -y libopencv-dev && \
     ln -s /usr/include/opencv4/opencv2 /usr/include/opencv2
