@@ -1,3 +1,4 @@
+ARG GO_VERSION=1.21-bullseye
 FROM ubuntu:22.04 AS oneapi-lib-installer
 
 RUN apt-get update && \
@@ -32,7 +33,6 @@ RUN no_proxy=$no_proxy wget -qO - https://repositories.intel.com/graphics/intel-
 RUN printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/graphics/ubuntu jammy %s\n' "$DEVICE" | \
     tee /etc/apt/sources.list.d/intel.gpu.jammy.list
 
-ARG GO_VERSION=1.21-bullseye
 FROM golang:$GO_VERSION as requirements
 
 ARG BUILD_TYPE
