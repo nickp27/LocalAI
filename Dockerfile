@@ -1,5 +1,38 @@
-ARG GO_VERSION=1.21-bullseye
+FROM ubuntu:22.04 AS oneapi-lib-installer
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    ca-certificates \
+    gnupg2 \
+    gpg-agent \
+    unzip \
+    wget
+
+# oneAPI packages
+RUN no_proxy=$no_proxy wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+   | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null && \
+   echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+   | tee /etc/apt/sources.list.d/oneAPI.list
+
+ARG DPCPP_VER=2023.2.1-16
+ARG MKL_VER=2023.2.0-49495
+# intel-oneapi-compiler-shared-common provides `sycl-ls`
+ARG CMPLR_COMMON_VER=2023.2.1
+# Install runtime libs to reduce image size
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    intel-oneapi-runtime-dpcpp-cpp=${DPCPP_VER} \
+    intel-oneapi-runtime-mkl=${MKL_VER} \
+    intel-oneapi-compiler-shared-common-${CMPLR_COMMON_VER}=${DPCPP_VER}
+
+# Prepare Intel Graphics driver index
+ARG DEVICE=flex
+RUN no_proxy=$no_proxy wget -qO - https://repositories.intel.com/graphics/intel-graphics.key | \
+    gpg --dearmor --output /usr/share/keyrings/intel-graphics.gpg
+RUN printf 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/graphics/ubuntu jammy %s\n' "$DEVICE" | \
+    tee /etc/apt/sources.list.d/intel.gpu.jammy.list
+
+ARG GO_VERSION=1.21-bullseye
 FROM golang:$GO_VERSION as requirements
 
 ARG BUILD_TYPE
@@ -55,18 +88,40 @@ WORKDIR /build
 # OpenBLAS requirements
 RUN apt-get install -y libopenblas-dev
 
-# clBLAST iGPu requirements
-RUN apt install libclblast-dev -y && \
-              mkdir /tmp/neo && \
-              cd /tmp/neo && \
-              wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.14508.16/intel-igc-core_1.0.14508.16_amd64.deb && \
-              wget https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.14508.16/intel-igc-opencl_1.0.14508.16_amd64.deb && \
-              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-level-zero-gpu-dbgsym_1.3.26690.22_amd64.ddeb && \
-              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-level-zero-gpu_1.3.26690.22_amd64.deb && \
-              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-opencl-icd-dbgsym_23.26.26690.22_amd64.ddeb && \
-              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/intel-opencl-icd_23.26.26690.22_amd64.deb && \
-              wget https://github.com/intel/compute-runtime/releases/download/23.26.26690.22/libigdgmm12_22.3.0_amd64.deb && \
-              dpkg -i *.deb
+# clBLAST intel requirements
+RUN mkdir /oneapi-lib
+COPY --from=oneapi-lib-installer /opt/intel/oneapi/lib /oneapi-lib/
+ARG CMPLR_COMMON_VER=2023.2.1
+COPY --from=oneapi-lib-installer /opt/intel/oneapi/compiler/${CMPLR_COMMON_VER}/linux/bin/sycl-ls /bin/
+COPY --from=oneapi-lib-installer /usr/share/keyrings/intel-graphics.gpg /usr/share/keyrings/intel-graphics.gpg
+COPY --from=oneapi-lib-installer /etc/apt/sources.list.d/intel.gpu.jammy.list /etc/apt/sources.list.d/intel.gpu.jammy.list
+
+# Set oneAPI lib env
+ENV LD_LIBRARY_PATH=/oneapi-lib:/oneapi-lib/intel64:$LD_LIBRARY_PATH
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    ca-certificates && \
+    apt-get clean && \
+    rm -rf  /var/lib/apt/lists/*
+
+ARG ICD_VER=23.17.26241.33-647~22.04
+ARG LEVEL_ZERO_GPU_VER=1.3.26241.33-647~22.04
+ARG LEVEL_ZERO_VER=1.11.0-647~22.04
+ARG LEVEL_ZERO_DEV_VER=1.11.0-647~22.04
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    intel-opencl-icd=${ICD_VER} \
+    intel-level-zero-gpu=${LEVEL_ZERO_GPU_VER} \
+    level-zero=${LEVEL_ZERO_VER} \
+    level-zero-dev=${LEVEL_ZERO_DEV_VER} && \
+    apt-get clean && \
+    rm -rf  /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    opencl-headers \
+    clblast-utils
 
 # Stable Diffusion requirements
 RUN apt-get install -y libopencv-dev && \
